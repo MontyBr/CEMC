@@ -1,11 +1,18 @@
 import { wgs84ToGcj02 } from './coords.js';
 import { lookupQuery } from './glossary.js';
+import { searchAmapJs, searchOsm } from './places.js';
+import { createAmapView, createLeafletView, loadScript } from './mapviews.js';
 
 const DEFAULT_CENTER = [121.4737, 31.2304]; // Shanghai, until we know where you are
 const isWeChat = /MicroMessenger/i.test(navigator.userAgent);
 
 const $ = (id) => document.getElementById(id);
-const state = { config: null, map: null, me: null, here: null, markers: [], results: [], selected: -1 };
+// mode: 'server' (Node server with AMap keys), 'amap' (static site with an AMap
+// JS key in config.json) or 'osm' (no keys: OpenStreetMap places).
+const state = { mode: null, config: {}, view: null, here: null, results: [], selected: -1, searchSeq: 0 };
+// Resolves once the map exists, so a search tapped during loading just waits.
+let markViewReady;
+const viewReady = new Promise((resolve) => (markViewReady = resolve));
 
 // ---------- helpers ----------
 
@@ -35,16 +42,6 @@ function title(place) {
   return place.nameEn || place.category || place.name;
 }
 
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error(`Could not load ${src}`));
-    document.head.appendChild(s);
-  });
-}
-
 async function copy(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -61,24 +58,38 @@ async function copy(text) {
   }
 }
 
-// ---------- map ----------
-
-async function initMap() {
-  // Requests that need the AMap security code go through our server's proxy.
-  window._AMapSecurityConfig = { serviceHost: `${location.origin}/_AMapService` };
-  await loadScript(`https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(state.config.amapKey)}`);
-  state.map = new AMap.Map('map', { zoom: 15, center: DEFAULT_CENTER, lang: 'en', resizeEnable: true });
-  state.map.on('click', closeDetail);
+async function getJson(url) {
+  try {
+    const res = await fetch(url);
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
 }
 
-function placeMe([lng, lat]) {
-  state.here = [lng, lat];
-  if (!state.me) {
-    state.me = new AMap.Marker({ position: state.here, content: '<div class="me"></div>', offset: new AMap.Pixel(-9, -9), zIndex: 200 });
-    state.map.add(state.me);
-  } else {
-    state.me.setPosition(state.here);
+// ---------- setup ----------
+
+async function loadConfig() {
+  const server = await getJson('api/config');
+  if (server?.amapKey) return { mode: 'server', config: server };
+  // On static hosting the deploy workflow can write an AMap JS key here.
+  const file = await getJson('config.json');
+  if (file?.amapKey) return { mode: 'amap', config: file };
+  return { mode: 'osm', config: {} };
+}
+
+function createView() {
+  const el = $('map');
+  if (state.mode === 'server') {
+    // Requests that need the AMap security code go through our server's proxy.
+    const securityConfig = { serviceHost: `${location.origin}/_AMapService` };
+    return createAmapView(el, { key: state.config.amapKey, securityConfig, center: DEFAULT_CENTER });
   }
+  if (state.mode === 'amap') {
+    const securityConfig = { securityJsCode: state.config.amapSecurityCode };
+    return createAmapView(el, { key: state.config.amapKey, securityConfig, center: DEFAULT_CENTER });
+  }
+  return createLeafletView(el, { center: DEFAULT_CENTER });
 }
 
 // ---------- location (always returned as GCJ-02) ----------
@@ -116,7 +127,12 @@ function browserLocation() {
   });
 }
 
-async function locate({ recenter = true } = {}) {
+function placeMe(pos) {
+  state.here = pos;
+  state.view.setMe(pos);
+}
+
+async function locate() {
   let pos;
   try {
     if (isWeChat && state.config.wechat) {
@@ -125,12 +141,12 @@ async function locate({ recenter = true } = {}) {
     } else {
       pos = await browserLocation();
     }
-  } catch (err) {
+  } catch {
     toast('Could not get your location — allow location access, or pan the map to search an area.', 4000);
     return null;
   }
   placeMe(pos);
-  if (recenter) state.map.setZoomAndCenter(15, pos);
+  state.view.setView(pos, 15);
   return pos;
 }
 
@@ -145,49 +161,81 @@ function watchLocation() {
 
 // ---------- search ----------
 
-async function search(q) {
-  q = q.trim();
-  if (!q) return;
-  $('q').value = q;
-  $('q').blur();
-  document.querySelectorAll('#chips button').forEach((b) => b.classList.toggle('active', b.dataset.q === q));
-  if (state.lite) return liteSearch(q);
-  closeDetail();
-  setSheet(true);
-
-  // Search around whatever the map is showing, so you can pan to plan ahead.
-  const center = state.map.getCenter();
-  $('status').textContent = `Searching for “${q}”…`;
-  try {
-    const params = new URLSearchParams({ q, lng: center.getLng(), lat: center.getLat(), radius: radiusForZoom() });
-    const res = await fetch(`api/search?${params}`);
-    const body = await res.json();
-    if (!res.ok) throw new Error(body.error || 'Search failed');
-    state.results = body.results;
-    renderResults(q, body);
-  } catch (err) {
-    $('status').textContent = `Search failed: ${err.message}`;
-  }
-}
-
 function radiusForZoom() {
-  const zoom = state.map.getZoom();
+  const zoom = state.view.zoom();
   if (zoom >= 16) return 1500;
   if (zoom >= 14) return 3000;
   if (zoom >= 12) return 10000;
   return 30000;
 }
 
-function renderResults(q, body) {
-  state.map.remove(state.markers);
-  state.markers = [];
-  state.selected = -1;
+async function runSearch(q, [lng, lat], radius) {
+  if (state.mode === 'server') {
+    const params = new URLSearchParams({ q, lng, lat, radius });
+    const res = await fetch(`api/search?${params}`);
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || 'Search failed');
+    return body;
+  }
+  // No server: the glossary turns common searches into the words locals use.
+  const keywords = lookupQuery(q) || q;
+  if (state.mode === 'amap') {
+    return { keywords, results: await searchAmapJs(state.view.AMap, { keywords, lng, lat, radius }) };
+  }
+  // Overpass gets slow over big areas, and OSM is sparse beyond city centres anyway.
+  return { keywords, results: await searchOsm({ query: q, keywords, lng, lat, radius: Math.min(radius, 5000) }) };
+}
 
-  const { results } = body;
-  const keywordNote = body.keywords && body.keywords !== q ? ` (searched “${body.keywords}”)` : '';
-  $('status').textContent = results.length
-    ? `${results.length} results for “${q}”${keywordNote}`
-    : `No results for “${q}”${keywordNote}. Try zooming out or another word.`;
+async function search(q) {
+  q = q.trim();
+  if (!q) return;
+  $('q').value = q;
+  $('q').blur();
+  document.querySelectorAll('#chips button').forEach((b) => b.classList.toggle('active', b.dataset.q === q));
+  closeDetail();
+  setSheet(true);
+  setStatus(`Searching for “${escapeHtml(q)}”…`);
+  await viewReady;
+
+  // Search around whatever the map is showing, so you can pan to plan ahead.
+  const seq = ++state.searchSeq;
+  const center = state.view.center();
+  try {
+    const body = await runSearch(q, center, radiusForZoom());
+    if (seq !== state.searchSeq) return; // a newer search has started
+    state.results = body.results;
+    renderResults(q, body);
+  } catch (err) {
+    if (seq !== state.searchSeq) return;
+    setStatus(`Search failed: ${escapeHtml(err.message)}`, q);
+  }
+}
+
+function amapSearchUrl(keyword) {
+  const params = new URLSearchParams({ keyword, view: 'map', src: 'china-maps', coordinate: 'gaode', callnative: '1' });
+  params.set('center', state.view.center().join(','));
+  return `https://uri.amap.com/search?${params}`;
+}
+
+// The status line; in OpenStreetMap mode it links to Amap for fuller results.
+function setStatus(html, keyword) {
+  const more =
+    state.mode === 'osm' && keyword
+      ? ` <a class="more" href="${escapeHtml(amapSearchUrl(keyword))}" target="_blank" rel="noopener">More in Amap ↗</a>`
+      : '';
+  $('status').innerHTML = html + more;
+}
+
+function renderResults(q, body) {
+  state.selected = -1;
+  const { results, keywords } = body;
+  const keywordNote = keywords && keywords !== q ? ` (searched “${escapeHtml(keywords)}”)` : '';
+  setStatus(
+    results.length
+      ? `${results.length} results for “${escapeHtml(q)}”${keywordNote}`
+      : `No results for “${escapeHtml(q)}”${keywordNote}. Try zooming out or another word.`,
+    keywords || q,
+  );
 
   $('results').innerHTML = results
     .map((p, i) => `
@@ -201,31 +249,15 @@ function renderResults(q, body) {
       </li>`)
     .join('');
 
-  results.forEach((p, i) => {
-    const marker = new AMap.Marker({
-      position: [p.lng, p.lat],
-      content: `<div class="pin"><span>${i + 1}</span></div>`,
-      offset: new AMap.Pixel(-13, -30),
-      title: title(p),
-    });
-    marker.on('click', () => select(i));
-    state.markers.push(marker);
-  });
-  state.map.add(state.markers);
-  if (state.markers.length) state.map.setFitView([...state.markers, ...(state.me ? [state.me] : [])], false, [140, 60, 60, 60]);
+  state.view.setPins(results, select);
+  state.view.fit();
 }
 
 function select(i) {
-  const prev = state.markers[state.selected];
-  if (prev) {
-    prev.setContent(`<div class="pin"><span>${state.selected + 1}</span></div>`);
-    prev.setzIndex(100);
-  }
   state.selected = i;
   const p = state.results[i];
-  state.markers[i].setContent(`<div class="pin selected"><span>${i + 1}</span></div>`);
-  state.markers[i].setzIndex(150);
-  state.map.setCenter([p.lng, p.lat]);
+  state.view.highlight(i);
+  state.view.focus([p.lng, p.lat]);
   document.querySelectorAll('#results li').forEach((li) => li.classList.toggle('selected', Number(li.dataset.i) === i));
   showDetail(p);
 }
@@ -287,46 +319,12 @@ async function onDetailAction(act) {
   }
 }
 
-// ---------- lite mode (no AMap key: hand searches to the Amap app) ----------
-
-function amapSearchUrl(keyword) {
-  const params = new URLSearchParams({ keyword, view: 'map', src: 'china-maps', coordinate: 'gaode', callnative: '1' });
-  if (state.here) params.set('center', state.here.join(','));
-  return `https://uri.amap.com/search?${params}`;
-}
-
-function liteSearch(q) {
-  // The glossary turns common searches into the words locals use; anything
-  // else goes through as typed, which Amap's English mode can also handle.
-  const keyword = lookupQuery(q) || q;
-  state.liteKeyword = keyword;
-  $('lite-en').textContent = q;
-  $('lite-zh').textContent = keyword;
-  $('lite-amap').href = amapSearchUrl(keyword);
-  $('lite-result').hidden = false;
-}
-
-async function startLite() {
-  state.lite = true;
-  document.body.classList.add('lite');
-  $('lite').hidden = false;
-  $('lite-amap').addEventListener('click', () => ($('lite-amap').href = amapSearchUrl(state.liteKeyword)));
-  $('lite-copy').addEventListener('click', async () => toast((await copy(state.liteKeyword)) ? 'Copied' : 'Copy failed'));
-  $('lite-dianping').addEventListener('click', () => openDianping(state.liteKeyword));
-  try {
-    state.here = await browserLocation();
-    $('lite-location').textContent = '📍 Searching around your current location.';
-  } catch {
-    $('lite-location').textContent = '📍 Location is off, so Amap will search around wherever its map is showing.';
-  }
-}
-
 // ---------- Dianping ----------
 
 // Dianping has no public API or documented search link, so copy the Chinese
 // text and open the app for the user to paste it. Everything here must run
 // synchronously inside the tap: phones block app switches and pop-ups that
-// happen later (the old version waited 600 ms, so nothing opened).
+// happen later.
 function openDianping(text) {
   copy(text);
   toast('Copied “' + text + '” — paste it into Dianping’s search box', 4000);
@@ -358,13 +356,8 @@ function bindUi() {
     if (li) select(Number(li.dataset.i));
   });
   $('handle').addEventListener('click', () => setSheet(document.body.classList.contains('sheet-collapsed')));
-  $('locate').addEventListener('click', () => locate());
-  $('lang').addEventListener('click', () => {
-    // EN = English labels; 中/EN = bilingual, handy for matching street signs.
-    const bilingual = $('lang').textContent === 'EN';
-    state.map.setLang(bilingual ? 'zh_en' : 'en');
-    $('lang').textContent = bilingual ? '中/EN' : 'EN';
-  });
+  $('locate').addEventListener('click', () => state.view && locate());
+  $('lang').addEventListener('click', () => state.view && ($('lang').textContent = state.view.toggleLang()));
   $('detail-close').addEventListener('click', closeDetail);
   $('detail').addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]');
@@ -378,12 +371,13 @@ function bindUi() {
 async function main() {
   bindUi();
   setSheet(false);
-  // On static hosting (e.g. GitHub Pages) there is no API server, so run lite.
-  state.config = await fetch('api/config')
-    .then((res) => (res.ok ? res.json() : null))
-    .catch(() => null);
-  if (!state.config?.amapKey) return startLite();
-  await initMap();
+  Object.assign(state, await loadConfig());
+  if (state.mode === 'osm') {
+    setStatus('Search for anything nearby — in English. Places come from OpenStreetMap, so smaller spots may be missing.');
+  }
+  state.view = await createView();
+  state.view.onBackgroundClick(closeDetail);
+  markViewReady();
   await locate();
   watchLocation();
 }

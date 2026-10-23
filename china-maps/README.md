@@ -25,26 +25,44 @@ actually get there: directions, the Chinese name to show a driver, ratings and p
   - **Reviews on Dianping:** copies the name and opens Dianping (see the Dianping note below).
   - **Call**, and **Open in WeChat map** when you are inside WeChat.
 
-## Quickest start: no keys (lite mode)
+## Three ways to run it
 
-When the app runs without AMap keys (or without the Node server at all), it switches to
-**lite mode**. You search in English, the app turns that into the Chinese term locals use,
-and **Show results on Amap** opens the Amap app at your location with that search. Since
-2025 the Amap app has an English mode (look under **Language** in its settings), so the
-results it shows are readable.
+The app picks the best data source it can find when it loads:
 
-Lite mode is plain static files, so GitHub Pages can host it for free over HTTPS:
+| Mode | When | Places come from | Needs |
+|---|---|---|---|
+| **OpenStreetMap** | No keys at all | OpenStreetMap (Overpass API) | Nothing. Works on GitHub Pages |
+| **AMap (static)** | `config.json` holds an AMap JS key | AMap JS API `PlaceSearch` | A Web端 (JS API) key and security code |
+| **AMap (server)** | The Node server has keys | AMap Web Service API, plus optional Claude translation and WeChat | The Node server and keys |
 
-1. Merge the pull request into `master`.
-2. In the repo on GitHub, open **Settings → Pages** and set **Source** to **GitHub Actions**.
-3. Open **Actions → Deploy China Maps to GitHub Pages → Run workflow**. (Later pushes to
-   `china-maps/public` on `master` deploy automatically.)
-4. Open `https://<your-username>.github.io/<repo>/` on your phone. Allow location access
-   when asked, then use Share → **Add to Home Screen**.
+All three show results as pins on an English map, with the same list and place cards.
+
+**OpenStreetMap mode** draws the map with AMap's public English tiles (no key needed) and
+searches OpenStreetMap for places. The glossary maps common searches like "hotpot" or
+"massage" to OpenStreetMap tags, and anything else is matched by name in Chinese or
+English. OpenStreetMap has good coverage of sights, metro stations, hotels and chains in
+big cities, but far fewer small restaurants and shops than AMap, and no ratings or prices.
+**More in Amap ↗** in the results opens the same search in the Amap app, which has
+an English mode under **Language** in its settings.
+
+### Hosting on GitHub Pages
+
+1. In the repo on GitHub, open **Settings → Pages** and set **Source** to **GitHub Actions**.
+2. Open **Actions → Deploy China Maps to GitHub Pages → Run workflow**. Later pushes to
+   `china-maps/public` on `master` deploy automatically.
+3. Open `https://<your-username>.github.io/<repo>/` on your phone, allow location access,
+   then use Share → **Add to Home Screen**.
 
 github.io is usually reachable from mainland China, though it can be slow at times.
 
-## Full setup (map with results overlaid)
+**Switching the hosted site to AMap search:** create a **Web端 (JS API)** key in the AMap console
+(see *Keys you need* below), then add two repository secrets under **Settings → Secrets and
+variables → Actions**: `AMAP_JS_KEY` and `AMAP_JS_SECURITY_CODE`. Run the workflow again.
+The deploy writes them into `config.json`, so they are visible to anyone who opens the
+site. AMap allows this, but you should limit the key to your site: in the AMap console, add
+`<your-username>.github.io` to the key's domain whitelist (域名白名单).
+
+## Running the server
 
 ```bash
 cd china-maps
@@ -84,7 +102,10 @@ server.js ── glossary or Claude ──► "火锅"
 |---|---|
 | `server.js` | Static files, `/api/search`, `/api/config`, `/api/wechat-config`, and the AMap security proxy |
 | `public/glossary.js` | English → Chinese search terms, and AMap category → English |
-| `lib/amap.js` | AMap place search and result normalisation |
+| `lib/amap.js` | AMap Web Service place search (server) |
+| `public/places.js` | Browser-side search: AMap JS API and OpenStreetMap, and the shared result format |
+| `public/mapviews.js` | The two map views: AMap JS API, or Leaflet on AMap's public tiles |
+| `public/vendor/` | Leaflet 1.9.4, bundled because CDNs can be unreliable in China |
 | `lib/translate.js` | Optional Claude translation of queries and place names |
 | `lib/wechat.js` | WeChat JS-SDK signature, with token and ticket caching |
 | `public/` | The mobile UI. Plain HTML, CSS and JS with no build step |
