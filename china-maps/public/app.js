@@ -280,10 +280,7 @@ async function onDetailAction(act) {
   } else if (act === 'copy') {
     toast((await copy(p.name)) ? 'Chinese name copied' : 'Copy failed');
   } else if (act === 'dianping') {
-    // Dianping has no public API or search deep link, so hand over the name.
-    await copy(p.name);
-    toast('Name copied — paste it into Dianping’s search box', 3500);
-    setTimeout(() => window.open('https://m.dianping.com/', '_blank'), 600);
+    openDianping(p.name);
   } else if (act === 'wxmap') {
     await wechatReady();
     wx.openLocation({ latitude: p.lat, longitude: p.lng, name: p.name, address: p.address, scale: 16 });
@@ -315,17 +312,30 @@ async function startLite() {
   $('lite').hidden = false;
   $('lite-amap').addEventListener('click', () => ($('lite-amap').href = amapSearchUrl(state.liteKeyword)));
   $('lite-copy').addEventListener('click', async () => toast((await copy(state.liteKeyword)) ? 'Copied' : 'Copy failed'));
-  $('lite-dianping').addEventListener('click', async () => {
-    await copy(state.liteKeyword);
-    toast('Copied — paste it into Dianping’s search box', 3500);
-    setTimeout(() => window.open('https://m.dianping.com/', '_blank'), 600);
-  });
+  $('lite-dianping').addEventListener('click', () => openDianping(state.liteKeyword));
   try {
     state.here = await browserLocation();
     $('lite-location').textContent = '📍 Searching around your current location.';
   } catch {
     $('lite-location').textContent = '📍 Location is off, so Amap will search around wherever its map is showing.';
   }
+}
+
+// ---------- Dianping ----------
+
+// Dianping has no public API or documented search link, so copy the Chinese
+// text and open the app for the user to paste it. Everything here must run
+// synchronously inside the tap: phones block app switches and pop-ups that
+// happen later (the old version waited 600 ms, so nothing opened).
+function openDianping(text) {
+  copy(text);
+  toast('Copied “' + text + '” — paste it into Dianping’s search box', 4000);
+  // If the app isn't installed the page stays visible; fall back to the mobile site.
+  const fallback = setTimeout(() => {
+    if (document.visibilityState === 'visible') location.href = 'https://m.dianping.com/';
+  }, 1500);
+  document.addEventListener('visibilitychange', () => clearTimeout(fallback), { once: true });
+  location.href = 'dianping://';
 }
 
 // ---------- sheet & controls ----------
