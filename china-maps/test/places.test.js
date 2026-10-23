@@ -70,3 +70,41 @@ test('searchOsm reports when every mirror fails', async () => {
   const fetchImpl = async () => { throw new Error('offline'); };
   await assert.rejects(searchOsm({ query: 'x', keywords: 'x', ...SHANGHAI, radius: 1000, fetchImpl }), /unavailable \(offline\)/);
 });
+
+import { buildTencentUrl, normalizeTencentPoi, searchTencent } from '../public/places.js';
+
+test('Tencent URL uses a nearby boundary capped at 1000 m and JSONP', () => {
+  const url = new URL(buildTencentUrl({ key: 'K', keywords: '火锅', lng: 121.4737, lat: 31.2304, radius: 3000, callback: 'cb1' }));
+  assert.equal(url.origin + url.pathname, 'https://apis.map.qq.com/ws/place/v1/search');
+  assert.equal(url.searchParams.get('boundary'), 'nearby(31.2304,121.4737,1000,1)');
+  assert.equal(url.searchParams.get('keyword'), '火锅');
+  assert.equal(url.searchParams.get('output'), 'jsonp');
+  assert.equal(url.searchParams.get('callback'), 'cb1');
+  assert.equal(url.searchParams.get('key'), 'K');
+});
+
+test('normalises Tencent places', () => {
+  const p = normalizeTencentPoi({
+    id: '123', title: '海底捞火锅', address: '西藏中路1号', tel: '021-1234;021-5678', category: '美食:火锅',
+    location: { lat: 31.2285, lng: 121.4755 }, _distance: 210.5, ad_info: { city: '上海市', district: '黄浦区' },
+  });
+  assert.deepEqual(
+    [p.id, p.name, p.category, p.address, p.lng, p.lat, p.distance, p.phone],
+    ['123', '海底捞火锅', 'Hotpot', '上海市 黄浦区 西藏中路1号', 121.4755, 31.2285, 210.5, '021-1234'],
+  );
+  assert.equal(normalizeTencentPoi({ id: 'x', title: 'no location' }), null);
+});
+
+test('searchTencent returns places and surfaces API errors', async () => {
+  let builtUrl;
+  const ok = async (build) => {
+    builtUrl = build('cb9');
+    return { status: 0, data: [{ id: '1', title: 'A', category: '娱乐休闲:洗浴推拿足疗', location: { lat: 31.23, lng: 121.47 } }] };
+  };
+  const results = await searchTencent({ key: 'K', keywords: '按摩', lng: 121.47, lat: 31.23, radius: 500, request: ok });
+  assert.match(builtUrl, /callback=cb9/);
+  assert.equal(results[0].category, 'Spa & massage');
+
+  const bad = async () => ({ status: 311, message: 'key格式错误' });
+  await assert.rejects(searchTencent({ key: 'x', keywords: 'a', lng: 1, lat: 1, radius: 10, request: bad }), /Tencent Maps error 311/);
+});

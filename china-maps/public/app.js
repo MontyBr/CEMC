@@ -1,14 +1,14 @@
 import { wgs84ToGcj02 } from './coords.js';
 import { lookupQuery } from './glossary.js';
-import { searchAmapJs, searchOsm } from './places.js';
+import { searchAmapJs, searchTencent, searchOsm } from './places.js';
 import { createAmapView, createLeafletView, loadScript } from './mapviews.js';
 
 const DEFAULT_CENTER = [121.4737, 31.2304]; // Shanghai, until we know where you are
 const isWeChat = /MicroMessenger/i.test(navigator.userAgent);
 
 const $ = (id) => document.getElementById(id);
-// mode: 'server' (Node server with AMap keys), 'amap' (static site with an AMap
-// JS key in config.json) or 'osm' (no keys: OpenStreetMap places).
+// mode: 'server' (Node server with AMap keys), 'amap' or 'tencent' (static
+// site with a key in config.json) or 'osm' (no keys: OpenStreetMap places).
 const state = { mode: null, config: {}, view: null, here: null, results: [], selected: -1, searchSeq: 0 };
 // Resolves once the map exists, so a search tapped during loading just waits.
 let markViewReady;
@@ -72,9 +72,10 @@ async function getJson(url) {
 async function loadConfig() {
   const server = await getJson('api/config');
   if (server?.amapKey) return { mode: 'server', config: server };
-  // On static hosting the deploy workflow can write an AMap JS key here.
+  // On static hosting the deploy workflow can write AMap / Tencent keys here.
   const file = await getJson('config.json');
   if (file?.amapKey) return { mode: 'amap', config: file };
+  if (file?.tencentKey) return { mode: 'tencent', config: file };
   return { mode: 'osm', config: {} };
 }
 
@@ -89,7 +90,12 @@ function createView() {
     const securityConfig = { securityJsCode: state.config.amapSecurityCode };
     return createAmapView(el, { key: state.config.amapKey, securityConfig, center: DEFAULT_CENTER });
   }
-  return createLeafletView(el, { center: DEFAULT_CENTER });
+  // Tencent and AMap both use GCJ-02, so Tencent places sit correctly on AMap's tiles.
+  const places =
+    state.mode === 'tencent'
+      ? 'Places © Tencent'
+      : 'Places © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+  return createLeafletView(el, { center: DEFAULT_CENTER, attribution: `Map © AutoNavi · ${places}` });
 }
 
 // ---------- location (always returned as GCJ-02) ----------
@@ -181,6 +187,9 @@ async function runSearch(q, [lng, lat], radius) {
   const keywords = lookupQuery(q) || q;
   if (state.mode === 'amap') {
     return { keywords, results: await searchAmapJs(state.view.AMap, { keywords, lng, lat, radius }) };
+  }
+  if (state.mode === 'tencent') {
+    return { keywords, results: await searchTencent({ key: state.config.tencentKey, keywords, lng, lat, radius }) };
   }
   // Overpass gets slow over big areas, and OSM is sparse beyond city centres anyway.
   return { keywords, results: await searchOsm({ query: q, keywords, lng, lat, radius: Math.min(radius, 5000) }) };
