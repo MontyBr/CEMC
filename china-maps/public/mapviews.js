@@ -85,7 +85,7 @@ export async function createAmapView(el, { key, securityConfig, center }) {
 
 const TILE_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang={lang}&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
 
-export async function createLeafletView(el, { center }) {
+export async function createLeafletView(el, { center, attribution }) {
   const css = document.createElement('link');
   css.rel = 'stylesheet';
   css.href = 'vendor/leaflet.css';
@@ -100,7 +100,7 @@ export async function createLeafletView(el, { center }) {
     subdomains: '1234',
     maxZoom: 18,
     lang: 'en',
-    attribution: 'Map © AutoNavi · Places © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    attribution,
   }).addTo(map);
   const icon = (html, size, anchor) => L.divIcon({ className: '', html, iconSize: size, iconAnchor: anchor });
   let me = null;

@@ -22,3 +22,9 @@ test('translates the most specific AMap type segment', () => {
   assert.equal(translateType('风景名胜;公园广场;未知'), 'Park & plaza');
   assert.equal(translateType(''), '');
 });
+
+test('translates Tencent categories, falling back to the reversed query glossary', () => {
+  assert.equal(translateType('美食:中餐厅:川菜'), 'Sichuan');
+  assert.equal(translateType('旅游景点:公园'), 'Park');
+  assert.equal(translateType('购物:综合商场'), 'Mall');
+});

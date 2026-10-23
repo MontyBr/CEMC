@@ -272,7 +272,29 @@ export const TYPE_GLOSSARY = {
   公共厕所: 'Public toilet',
   政府机构及社会团体: 'Government',
   公安警察: 'Police',
+  // Tencent Maps categories ("美食:火锅", "娱乐休闲:洗浴推拿足疗", …)
+  美食: 'Food & Drink',
+  火锅: 'Hotpot',
+  茶座: 'Teahouse',
+  娱乐休闲: 'Leisure',
+  洗浴推拿足疗: 'Spa & massage',
+  足疗按摩: 'Foot massage',
+  旅游景点: 'Sights',
+  综合商场: 'Mall',
+  购物: 'Shopping',
+  药房药店: 'Pharmacy',
+  银行金融: 'Finance',
+  交通设施: 'Transport',
+  医疗保健: 'Healthcare',
+  酒店宾馆: 'Hotel',
+  星级酒店: 'Hotel',
 };
+
+// Chinese keyword -> English, the glossary read backwards ("川菜" -> "Sichuan").
+const REVERSE_QUERY = {};
+for (const [en, zh] of Object.entries(QUERY_GLOSSARY)) {
+  REVERSE_QUERY[zh] ??= en.replace(/^./, (c) => c.toUpperCase());
+}
 
 function singular(word) {
   if (word.endsWith('ies')) return word.slice(0, -3) + 'y';
@@ -297,11 +319,13 @@ export function lookupQuery(query) {
   return null;
 }
 
-// "餐饮服务;中餐厅;火锅店" -> "Hotpot" (the most specific segment we know).
+// "餐饮服务;中餐厅;火锅店" (AMap) or "美食:火锅" (Tencent) -> "Hotpot",
+// using the most specific segment we know.
 export function translateType(type) {
-  const segments = String(type || '').split(/[;|]/).filter(Boolean);
+  const segments = String(type || '').split(/[;|:]/).filter(Boolean);
   for (let i = segments.length - 1; i >= 0; i--) {
-    if (TYPE_GLOSSARY[segments[i]]) return TYPE_GLOSSARY[segments[i]];
+    const english = TYPE_GLOSSARY[segments[i]] || REVERSE_QUERY[segments[i]];
+    if (english) return english;
   }
   return '';
 }

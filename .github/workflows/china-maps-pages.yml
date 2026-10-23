@@ -1,6 +1,7 @@
 # Publishes china-maps/public as a static site. With no keys the app shows
-# OpenStreetMap places; add the repository secrets AMAP_JS_KEY and
-# AMAP_JS_SECURITY_CODE to switch it to AMap search.
+# OpenStreetMap places. Repository secrets switch it to a better source:
+# AMAP_JS_KEY + AMAP_JS_SECURITY_CODE for AMap, or TENCENT_MAP_KEY for Tencent
+# Maps (AMap wins if both are set).
 name: Deploy China Maps to GitHub Pages
 
 on:
@@ -27,14 +28,15 @@ jobs:
     env:
       AMAP_JS_KEY: ${{ secrets.AMAP_JS_KEY }}
       AMAP_JS_SECURITY_CODE: ${{ secrets.AMAP_JS_SECURITY_CODE }}
+      TENCENT_MAP_KEY: ${{ secrets.TENCENT_MAP_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
-      - name: Write AMap config
-        if: env.AMAP_JS_KEY != ''
+      - name: Write map keys config
+        if: env.AMAP_JS_KEY != '' || env.TENCENT_MAP_KEY != ''
         run: >
-          node -e "require('fs').writeFileSync('china-maps/public/config.json',
-          JSON.stringify({ amapKey: process.env.AMAP_JS_KEY, amapSecurityCode: process.env.AMAP_JS_SECURITY_CODE }))"
+          node -e "const e = process.env; require('fs').writeFileSync('china-maps/public/config.json',
+          JSON.stringify({ amapKey: e.AMAP_JS_KEY, amapSecurityCode: e.AMAP_JS_SECURITY_CODE, tencentKey: e.TENCENT_MAP_KEY }))"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: china-maps/public

@@ -58,6 +58,87 @@ export function searchAmapJs(AMap, { keywords, lng, lat, radius }) {
   });
 }
 
+// ---------- Tencent Maps (腾讯位置服务) WebService API ----------
+
+const TENCENT_SEARCH_URL = 'https://apis.map.qq.com/ws/place/v1/search';
+// Tencent's "nearby" search only accepts a radius of 10–1000 m; auto_extend
+// widens it when nothing is found that close.
+const TENCENT_MAX_RADIUS = 1000;
+
+export function buildTencentUrl({ key, keywords, lng, lat, radius, callback }) {
+  const r = Math.min(Math.max(Math.round(radius), 10), TENCENT_MAX_RADIUS);
+  const params = new URLSearchParams({
+    key,
+    keyword: keywords,
+    boundary: `nearby(${lat},${lng},${r},1)`,
+    orderby: '_distance',
+    page_size: '20',
+    page_index: '1',
+    output: 'jsonp',
+    callback,
+  });
+  return `${TENCENT_SEARCH_URL}?${params}`;
+}
+
+export function normalizeTencentPoi(poi) {
+  const lng = Number(poi.location?.lng);
+  const lat = Number(poi.location?.lat);
+  if (!Number.isFinite(lng) || !Number.isFinite(lat) || !poi.title) return null;
+  const ad = poi.ad_info || {};
+  return {
+    id: String(poi.id),
+    name: poi.title,
+    nameEn: '',
+    category: translateType(poi.category),
+    type: poi.category || '',
+    address: [ad.city, ad.district, poi.address].filter(Boolean).join(' '),
+    lng,
+    lat,
+    distance: Number.isFinite(poi._distance) ? poi._distance : null,
+    rating: null,
+    cost: null,
+    phone: String(poi.tel || '').split(';')[0].trim(),
+    hours: '',
+    tags: '',
+    photo: '',
+  };
+}
+
+// Tencent's WebService API allows browser calls through JSONP (with the
+// site's domain whitelisted on the key), so no server is needed.
+let jsonpCount = 0;
+function jsonp(buildUrl, timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    const callback = `__tencentCb${++jsonpCount}`;
+    const script = document.createElement('script');
+    const done = () => {
+      clearTimeout(timer);
+      delete window[callback];
+      script.remove();
+    };
+    const timer = setTimeout(() => {
+      done();
+      reject(new Error('Tencent Maps did not respond'));
+    }, timeoutMs);
+    window[callback] = (data) => {
+      done();
+      resolve(data);
+    };
+    script.onerror = () => {
+      done();
+      reject(new Error('Could not reach Tencent Maps'));
+    };
+    script.src = buildUrl(callback);
+    document.head.appendChild(script);
+  });
+}
+
+export async function searchTencent({ key, keywords, lng, lat, radius, request = jsonp }) {
+  const body = await request((callback) => buildTencentUrl({ key, keywords, lng, lat, radius, callback }));
+  if (body.status !== 0) throw new Error(`Tencent Maps error ${body.status}: ${body.message}`);
+  return (body.data || []).map(normalizeTencentPoi).filter(Boolean);
+}
+
 // ---------- OpenStreetMap (Overpass API) ----------
 
 // Glossary keyword (Chinese) -> Overpass tag filters. Anything not listed is
