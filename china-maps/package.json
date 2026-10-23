@@ -1,0 +1,17 @@
+{
+  "name": "china-maps",
+  "version": "0.1.0",
+  "description": "English-friendly map search for travelling in China (AMap + WeChat + Dianping)",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.1.0"
+  }
+}
