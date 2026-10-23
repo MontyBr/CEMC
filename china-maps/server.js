@@ -2,7 +2,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { lookupQuery } from './lib/glossary.js';
+import { lookupQuery } from './public/glossary.js';
 import { searchAround } from './lib/amap.js';
 import { translationEnabled, translateQuery, translatePlaces } from './lib/translate.js';
 import { wechatEnabled, jsSdkConfig } from './lib/wechat.js';

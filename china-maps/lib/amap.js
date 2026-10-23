@@ -1,6 +1,6 @@
 // AMap (Gaode) Web Service place search. All coordinates are GCJ-02,
 // the same system the AMap JS map uses, so results can be plotted directly.
-import { translateType } from './glossary.js';
+import { translateType } from '../public/glossary.js';
 
 const AROUND_URL = 'https://restapi.amap.com/v5/place/around';
 

@@ -1,0 +1,33 @@
+# Publishes china-maps/public as a static site. Without the Node server the
+# app runs in lite mode (no API keys needed).
+name: Deploy China Maps to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+    paths: ['china-maps/public/**', '.github/workflows/china-maps-pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: china-maps/public
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -12,7 +12,7 @@ actually get there: directions, the Chinese name to show a driver, ratings and p
 - **English map labels.** AMap's English tiles. Tap **EN** to switch to bilingual labels
   (中/EN), which helps when you are matching street signs.
 - **English search.** "hotpot", "foot massage", "pharmacy", "temples" go through a built-in
-  glossary of about 200 travel terms (`lib/glossary.js`). With an Anthropic API key, any
+  glossary of about 200 travel terms (`public/glossary.js`). With an Anthropic API key, any
   other phrase is translated to Chinese search keywords, and the Chinese place names
   are translated to English.
 - **Results overlaid on the map.** Numbered pins plus a bottom-sheet list with rating, average
@@ -25,7 +25,26 @@ actually get there: directions, the Chinese name to show a driver, ratings and p
   - **Reviews on Dianping:** copies the name and opens Dianping (see the Dianping note below).
   - **Call**, and **Open in WeChat map** when you are inside WeChat.
 
-## Setup
+## Quickest start: no keys (lite mode)
+
+When the app runs without AMap keys (or without the Node server at all), it switches to
+**lite mode**. You search in English, the app turns that into the Chinese term locals use,
+and **Show results on Amap** opens the Amap app at your location with that search. Since
+2025 the Amap app has an English mode (look under **Language** in its settings), so the
+results it shows are readable.
+
+Lite mode is plain static files, so GitHub Pages can host it for free over HTTPS:
+
+1. Merge the pull request into `master`.
+2. In the repo on GitHub, open **Settings → Pages** and set **Source** to **GitHub Actions**.
+3. Open **Actions → Deploy China Maps to GitHub Pages → Run workflow**. (Later pushes to
+   `china-maps/public` on `master` deploy automatically.)
+4. Open `https://<your-username>.github.io/<repo>/` on your phone. Allow location access
+   when asked, then use Share → **Add to Home Screen**.
+
+github.io is usually reachable from mainland China, though it can be slow at times.
+
+## Full setup (map with results overlaid)
 
 ```bash
 cd china-maps
@@ -64,7 +83,7 @@ server.js ── glossary or Claude ──► "火锅"
 | File | Purpose |
 |---|---|
 | `server.js` | Static files, `/api/search`, `/api/config`, `/api/wechat-config`, and the AMap security proxy |
-| `lib/glossary.js` | English → Chinese search terms, and AMap category → English |
+| `public/glossary.js` | English → Chinese search terms, and AMap category → English |
 | `lib/amap.js` | AMap place search and result normalisation |
 | `lib/translate.js` | Optional Claude translation of queries and place names |
 | `lib/wechat.js` | WeChat JS-SDK signature, with token and ticket caching |

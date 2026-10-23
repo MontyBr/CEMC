@@ -1,4 +1,5 @@
 import { wgs84ToGcj02 } from './coords.js';
+import { lookupQuery } from './glossary.js';
 
 const DEFAULT_CENTER = [121.4737, 31.2304]; // Shanghai, until we know where you are
 const isWeChat = /MicroMessenger/i.test(navigator.userAgent);
@@ -86,7 +87,7 @@ async function wechatReady() {
   if (wechatReady.promise) return wechatReady.promise;
   wechatReady.promise = (async () => {
     await loadScript('https://res.wx.qq.com/open/js/jweixin-1.6.0.js');
-    const res = await fetch(`/api/wechat-config?url=${encodeURIComponent(location.href.split('#')[0])}`);
+    const res = await fetch(`api/wechat-config?url=${encodeURIComponent(location.href.split('#')[0])}`);
     if (!res.ok) throw new Error('WeChat signature failed');
     const cfg = await res.json();
     await new Promise((resolve, reject) => {
@@ -150,6 +151,7 @@ async function search(q) {
   $('q').value = q;
   $('q').blur();
   document.querySelectorAll('#chips button').forEach((b) => b.classList.toggle('active', b.dataset.q === q));
+  if (state.lite) return liteSearch(q);
   closeDetail();
   setSheet(true);
 
@@ -158,7 +160,7 @@ async function search(q) {
   $('status').textContent = `Searching for “${q}”…`;
   try {
     const params = new URLSearchParams({ q, lng: center.getLng(), lat: center.getLat(), radius: radiusForZoom() });
-    const res = await fetch(`/api/search?${params}`);
+    const res = await fetch(`api/search?${params}`);
     const body = await res.json();
     if (!res.ok) throw new Error(body.error || 'Search failed');
     state.results = body.results;
@@ -288,6 +290,44 @@ async function onDetailAction(act) {
   }
 }
 
+// ---------- lite mode (no AMap key: hand searches to the Amap app) ----------
+
+function amapSearchUrl(keyword) {
+  const params = new URLSearchParams({ keyword, view: 'map', src: 'china-maps', coordinate: 'gaode', callnative: '1' });
+  if (state.here) params.set('center', state.here.join(','));
+  return `https://uri.amap.com/search?${params}`;
+}
+
+function liteSearch(q) {
+  // The glossary turns common searches into the words locals use; anything
+  // else goes through as typed, which Amap's English mode can also handle.
+  const keyword = lookupQuery(q) || q;
+  state.liteKeyword = keyword;
+  $('lite-en').textContent = q;
+  $('lite-zh').textContent = keyword;
+  $('lite-amap').href = amapSearchUrl(keyword);
+  $('lite-result').hidden = false;
+}
+
+async function startLite() {
+  state.lite = true;
+  document.body.classList.add('lite');
+  $('lite').hidden = false;
+  $('lite-amap').addEventListener('click', () => ($('lite-amap').href = amapSearchUrl(state.liteKeyword)));
+  $('lite-copy').addEventListener('click', async () => toast((await copy(state.liteKeyword)) ? 'Copied' : 'Copy failed'));
+  $('lite-dianping').addEventListener('click', async () => {
+    await copy(state.liteKeyword);
+    toast('Copied — paste it into Dianping’s search box', 3500);
+    setTimeout(() => window.open('https://m.dianping.com/', '_blank'), 600);
+  });
+  try {
+    state.here = await browserLocation();
+    $('lite-location').textContent = '📍 Searching around your current location.';
+  } catch {
+    $('lite-location').textContent = '📍 Location is off, so Amap will search around wherever its map is showing.';
+  }
+}
+
 // ---------- sheet & controls ----------
 
 function setSheet(open) {
@@ -328,11 +368,11 @@ function bindUi() {
 async function main() {
   bindUi();
   setSheet(false);
-  state.config = await (await fetch('/api/config')).json();
-  if (!state.config.amapKey) {
-    $('status').textContent = 'Server is missing AMAP_JS_KEY — see README.';
-    return;
-  }
+  // On static hosting (e.g. GitHub Pages) there is no API server, so run lite.
+  state.config = await fetch('api/config')
+    .then((res) => (res.ok ? res.json() : null))
+    .catch(() => null);
+  if (!state.config?.amapKey) return startLite();
   await initMap();
   await locate();
   watchLocation();

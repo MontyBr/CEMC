@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { lookupQuery, translateType } from '../lib/glossary.js';
+import { lookupQuery, translateType } from '../public/glossary.js';
 
 test('maps English searches to Chinese keywords', () => {
   assert.equal(lookupQuery('Hotpot'), '火锅');
