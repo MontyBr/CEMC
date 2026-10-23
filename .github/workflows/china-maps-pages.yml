@@ -1,5 +1,6 @@
-# Publishes china-maps/public as a static site. Without the Node server the
-# app runs in lite mode (no API keys needed).
+# Publishes china-maps/public as a static site. With no keys the app shows
+# OpenStreetMap places; add the repository secrets AMAP_JS_KEY and
+# AMAP_JS_SECURITY_CODE to switch it to AMap search.
 name: Deploy China Maps to GitHub Pages
 
 on:
@@ -23,9 +24,17 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      AMAP_JS_KEY: ${{ secrets.AMAP_JS_KEY }}
+      AMAP_JS_SECURITY_CODE: ${{ secrets.AMAP_JS_SECURITY_CODE }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Write AMap config
+        if: env.AMAP_JS_KEY != ''
+        run: >
+          node -e "require('fs').writeFileSync('china-maps/public/config.json',
+          JSON.stringify({ amapKey: process.env.AMAP_JS_KEY, amapSecurityCode: process.env.AMAP_JS_SECURITY_CODE }))"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: china-maps/public

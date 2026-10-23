@@ -36,3 +36,23 @@ export function wgs84ToGcj02(lng, lat) {
   dLng = (dLng * 180) / ((A / sqrtMagic) * Math.cos(radLat) * Math.PI);
   return [lng + dLng, lat + dLat];
 }
+
+// Inverse of wgs84ToGcj02, accurate to well under a metre with two passes.
+export function gcj02ToWgs84(lng, lat) {
+  if (outOfChina(lng, lat)) return [lng, lat];
+  let [wLng, wLat] = [lng, lat];
+  for (let i = 0; i < 2; i++) {
+    const [gLng, gLat] = wgs84ToGcj02(wLng, wLat);
+    wLng -= gLng - lng;
+    wLat -= gLat - lat;
+  }
+  return [wLng, wLat];
+}
+
+export function distanceMeters([lng1, lat1], [lng2, lat2]) {
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLng = (lng2 - lng1) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(h));
+}

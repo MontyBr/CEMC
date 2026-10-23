@@ -131,6 +131,9 @@ body.sheet-collapsed .sheet { height: calc(96px + var(--safe-bottom)); }
 
 .handle { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 8px auto 4px; flex: none; }
 .status { margin: 4px 16px 8px; color: var(--muted); font-size: 14px; flex: none; }
+.status .more { color: var(--red); font-weight: 600; text-decoration: none; white-space: nowrap; }
+.leaflet-container { font: inherit; background: #e8eef3; }
+.leaflet-control-attribution { font-size: 10px; }
 
 .results { list-style: none; margin: 0; padding: 0 0 8px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
@@ -259,28 +262,3 @@ body.sheet-collapsed .sheet { height: calc(96px + var(--safe-bottom)); }
 }
 
 [hidden] { display: none !important; }
-
-/* Lite mode: no AMap key, so searches are handed to the Amap app. */
-body.lite #map, body.lite .controls, body.lite .sheet { display: none; }
-body.lite { background: var(--chip); }
-.lite {
-  position: fixed;
-  inset: 0;
-  overflow-y: auto;
-  padding: calc(var(--safe-top) + 130px) 16px calc(var(--safe-bottom) + 24px);
-}
-.lite-note { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
-.lite-card {
-  background: var(--panel);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
-  padding: 18px 16px;
-  margin-bottom: 16px;
-  display: flex;
-  flex-direction: column;
-}
-.lite-card .btn { display: block; }
-.lite-label { color: var(--muted); font-size: 13px; margin: 0; }
-.lite-en { font-size: 20px; font-weight: 600; margin: 2px 0 0; }
-.lite-zh { font-size: 40px; font-weight: 700; margin: 4px 0 16px; word-break: break-all; }
-.lite-card .actions { margin-top: 8px; }
